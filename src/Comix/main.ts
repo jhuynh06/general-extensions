@@ -74,9 +74,12 @@ class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     _localStorage: Record<string, string>,
   ): Promise<void> {
     for (const cookie of cookies) {
-      if (cookie.name == "cf_clearance") {
-        this.cookieStorageInterceptor.setCookie(cookie);
-      }
+      // The site-managed /@waf/challenge may issue a different cookie from
+      // Cloudflare's cf_clearance, so retain the cookies from the solved page.
+      const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+      if (domain !== "comix.to" && !domain.endsWith(".comix.to")) continue;
+      if (cookie.expires && cookie.expires.getTime() <= Date.now()) continue;
+      this.cookieStorageInterceptor.setCookie(cookie);
     }
   }
 

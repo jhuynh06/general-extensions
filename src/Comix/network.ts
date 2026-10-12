@@ -13,6 +13,19 @@ import { DOMAIN } from "./models";
 import { decryptImage, readEncHeaders } from "./utils/decryptImage";
 import { descrambleImage, readScrambleHeaders } from "./utils/descramble";
 
+const COMIX_CHALLENGE_PATH = "/@waf/challenge";
+
+function comixChallengeUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const absoluteUrl = url.startsWith("/") ? `${DOMAIN}${url}` : url;
+  const prefix = `${DOMAIN}${COMIX_CHALLENGE_PATH}`;
+  const nextCharacter = absoluteUrl.charAt(prefix.length);
+  return absoluteUrl.startsWith(prefix) &&
+    (!nextCharacter || nextCharacter === "?" || nextCharacter === "#")
+    ? absoluteUrl
+    : undefined;
+}
+
 export class ComixInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
     return {
@@ -36,6 +49,21 @@ export class ComixInterceptor extends PaperbackInterceptor {
         headers: {
           "user-agent": await Application.getDefaultUserAgent(),
         },
+      });
+    }
+
+    // Comix also redirects challenged requests to its own CAPTCHA page. That
+    // page returns 200 without the Cloudflare challenge header.
+    const challengeUrl =
+      comixChallengeUrl(response.headers?.location) ?? comixChallengeUrl(response.url);
+    const isChallengePage =
+      response.mimeType?.includes("text/html") &&
+      Application.arrayBufferToUTF8String(data).includes("/@waf/verify");
+    if (challengeUrl || isChallengePage) {
+      throw new CloudflareError({
+        url: challengeUrl ?? `${DOMAIN}${COMIX_CHALLENGE_PATH}?return=%2F`,
+        method: "GET",
+        headers: { "user-agent": await Application.getDefaultUserAgent() },
       });
     }
 
